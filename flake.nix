@@ -31,6 +31,17 @@
         devShells.default = pkgs.mkShell {
           buildInputs = [ mypython ];
         };
+
+        checks.templater-tests = pkgs.runCommand "templater-tests" {
+          buildInputs = [ mypython ];
+          # Pass the test + script files into the build environment
+          src = self;
+        } ''
+          cp $src/test_templater.py .
+          cp $src/templater.py .
+          ${mypython}/bin/python test_templater.py
+          touch $out
+        '';
       };
     };
 }
