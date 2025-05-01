@@ -40,12 +40,19 @@
           env = [
             # { name = "MY_ENV_VAR"; value = "SOTRUE"; }
           ];
-          packages = [
-            pkgs.racket     #if (or racket pollen)
-            pkgs.nodejs_22  #if (or node cljs astro)
-            pkgs.zulu       #if (or clj java cljs)
-            pkgs.clojure    #if clj
-            pkgs.gleam      #if (or gleam)
+          packages = with pkgs; [
+            racket           #if (or racket pollen)
+            nodejs_22        #if (or node cljs astro)
+            zulu             #if (or clj java cljs)
+            clojure          #if clj
+            clojure-lsp      #if clj
+            #if haskell
+            haskell.compiler."ghc98"
+            haskell.packages."ghc98".haskell-language-server
+            cabal-install
+            #endif haskell
+            gleam            #if (or gleam)
+            elixir_1_18      #if (or elixir)
           ];
           commands = [
             {
@@ -53,6 +60,11 @@
               command = "echo \"Run me!\"";
               help = "Launch the application";
             }
+            #if haskell
+            { name = "cr"; command = "cabal run "; help = "Alias for 'cabal run'"; }
+            { name = "cu"; command = "cabal update"; help = "'cabal update'"; }
+            #endif haskell
+            { name = "ie"; command = "iex -S mix"; help = "Run iex with the application loaded"; } #if elixir
             #if cljs
             {
               name = "create";
@@ -69,7 +81,7 @@
               command = "npx shadow-cljs compile $1";
               help = "Build a release";
             }
-            #endif
+            #endif cljs
           ];
         };
         #endif devshell
