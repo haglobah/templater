@@ -44,8 +44,14 @@
             pkgs.racket     #if (or racket pollen)
             pkgs.nodejs_22  #if (or node cljs astro)
             pkgs.zulu       #if (or clj java cljs)
+            pkgs.gleam      #if (or gleam)
           ];
           commands = [
+            {
+              name = "run";
+              command = "echo \"Run me!\"";
+              help = "Launch the application";
+            }
             #if cljs
             {
               name = "create";
@@ -74,16 +80,3 @@
       };
     };
 }
-#if devshell
-devshells.default = {
-  packages = [
-    pkgs.gleam
-    pkgs.nodejs #if node
-  ];
-};
-#endif
-
-Some setup for Clojure with devshell #if (and clj lala devshell)
-Some setup for devshell #if (or la le)
-
-einfach so hier.
