@@ -51,7 +51,11 @@
             haskell.packages."ghc98".haskell-language-server
             cabal-install
             #endif haskell
-            gleam            #if (or gleam)
+            #if gleam
+            gleam
+            erlang
+            rebar3
+            #endif gleam
             elixir_1_18      #if (or elixir)
           ];
           commands = [

@@ -12,7 +12,12 @@ result*
 .nrepl-port
 .lsp/
 #endif
-
+#if (or gleam erlang)
+*.beam
+*.ez
+/build
+erl_crash.dump
+#endif
 #if haskell
 dist
 dist-*
