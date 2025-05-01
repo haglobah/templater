@@ -3,8 +3,14 @@
 *.log
 tmp/
 
+result*
+
 #if clj
-.clj-kondo
+.clj-kondo/
+.cpcache/
+.calva/
+.nrepl-port
+.lsp/
 #endif
 
 #if haskell

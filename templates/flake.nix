@@ -44,6 +44,7 @@
             pkgs.racket     #if (or racket pollen)
             pkgs.nodejs_22  #if (or node cljs astro)
             pkgs.zulu       #if (or clj java cljs)
+            pkgs.clojure    #if clj
             pkgs.gleam      #if (or gleam)
           ];
           commands = [
