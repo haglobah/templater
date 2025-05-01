@@ -3,6 +3,7 @@ import argparse
 import os
 import re
 import difflib
+import colorama
 from pathlib import Path
 from typing import List, Set
 
@@ -114,13 +115,19 @@ def main():
 
     unused_flags = flags - used_flags
     if unused_flags:
+        colorama.init()
+
         print("\nUnused flags:")
         all_conditions = scan_all_conditions(src_dir)
         for flag in unused_flags:
-            msg = f'  The flag "{flag}" isn\'t anywhere in the template files.'
+            msg = f'  The flag {colorama.Fore.RED}{flag}{colorama.Style.RESET_ALL} isn\'t anywhere in the template files.\n\n'
+            msg += f'Available flags are:\n  '
+            for used_flag in used_flags:
+                msg += f'{used_flag} '
+            msg += f'\n\n'
             close = difflib.get_close_matches(flag, all_conditions, n=1)
             if close:
-                msg += f' Maybe you meant "{close[0]}"?'
+                msg += f'Did you mean {colorama.Fore.GREEN}{close[0]}{colorama.Style.RESET_ALL}?'
             print(msg)
 
 if __name__ == "__main__":
