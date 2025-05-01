@@ -19,7 +19,7 @@
           name = "templater";
           runtimeInputs = [ mypython ];
           text = ''
-            exec ${mypython}/bin/python ${self}/templater.py "$@"
+            exec ${mypython}/bin/python ${self}/templater.py --from ${self}/templates "$@"
           '';
         };
 
