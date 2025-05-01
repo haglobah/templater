@@ -1,0 +1,5 @@
+#if vscode
+{
+  "recommendations": ["jnoortheen.nix-ide"]
+}
+#endif
