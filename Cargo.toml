@@ -4,5 +4,10 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-clap = { version = "4.0", features = ["derive"] }
+clap = { version = "4.4", features = ["derive"] }
+walkdir = "2.4"
+colored = "2.0"
+strsim = "0.10"
 anyhow = "1.0"
+thiserror = "1.0"
+nom = "7.1" # Add nom
