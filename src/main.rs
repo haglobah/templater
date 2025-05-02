@@ -54,7 +54,7 @@ pub(crate) enum ProcessorError {
 #[command(author, version, about, long_about = None)]
 struct Args {
     /// Source directory with templates
-    #[arg(long = "from", default_value = ".", value_name = "SRC_DIR")]
+    #[arg(long = "from", default_value = "./templates", value_name = "SRC_DIR")]
     src_dir: PathBuf,
 
     /// Destination directory

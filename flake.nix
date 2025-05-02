@@ -19,9 +19,18 @@
         {
           packages.rust = pkgs.rustPlatform.buildRustPackage rec {
             pname = "templater";
+            meta.mainProgram = "templater";
             version = "0.2";
             cargoLock.lockFile = ./Cargo.lock;
             src = ./.;
+          };
+
+          packages.default = pkgs.writeShellApplication {
+            name = "templater";
+            runtimeInputs = [ self'.packages.rust ];
+            text = ''
+              ${self'.packages.rust}/bin/templater --from ${self}/templates "$@"
+            '';
           };
 
         packages.python = pkgs.writeShellApplication {
