@@ -50,37 +50,6 @@ pub(crate) enum ProcessorError {
     },
 }
 
-#[derive(Debug, PartialEq, Clone)]
-pub(crate) enum Condition {
-    Single(String),
-    And(Vec<String>),
-    Or(Vec<String>),
-}
-
-impl Condition {
-    // Make methods used by tests crate-public
-    pub(crate) fn evaluate(
-        &self,
-        flags: &HashSet<String>,
-        used_flags: &mut HashSet<String>,
-    ) -> bool {
-        match self {
-            Condition::Single(flag) => {
-                used_flags.insert(flag.clone());
-                flags.contains(flag)
-            }
-            Condition::And(terms) => {
-                used_flags.extend(terms.iter().cloned());
-                terms.iter().all(|term| flags.contains(term))
-            }
-            Condition::Or(terms) => {
-                used_flags.extend(terms.iter().cloned());
-                terms.iter().any(|term| flags.contains(term))
-            }
-        }
-    }
-}
-
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
