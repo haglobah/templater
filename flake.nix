@@ -17,6 +17,13 @@
           ]);
         in
         {
+          packages.rust = pkgs.rustPlatform.buildRustPackage rec {
+            pname = "templater";
+            version = "0.2";
+            cargoLock.lockFile = ./Cargo.lock;
+            src = ./.;
+          };
+
         packages.python = pkgs.writeShellApplication {
           name = "templater";
           runtimeInputs = [ mypython ];
