@@ -17,7 +17,7 @@
           ]);
         in
         {
-        packages.default = pkgs.writeShellApplication {
+        packages.python = pkgs.writeShellApplication {
           name = "templater";
           runtimeInputs = [ mypython ];
           text = ''
@@ -31,10 +31,15 @@
         };
 
         devShells.default = pkgs.mkShell {
-          buildInputs = [ mypython ];
+          buildInputs = [
+            mypython
+            pkgs.rustc
+            pkgs.cargo
+            pkgs.rust-analyzer
+          ];
         };
 
-        checks.templater-tests = pkgs.runCommand "templater-tests" {
+        checks.python-templater-tests = pkgs.runCommand "templater-tests" {
           buildInputs = [ mypython ];
           # Pass the test + script files into the build environment
           src = self;
