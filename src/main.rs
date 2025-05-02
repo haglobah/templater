@@ -1,6 +1,4 @@
-#[cfg(test)]
-mod tests;
-
+// src/main.rs
 use anyhow::{Context, Result, anyhow};
 use clap::Parser;
 use colored::*;
@@ -9,10 +7,12 @@ use nom::{
     branch::alt,
     bytes::complete::{tag, take_while1},
     character::complete::{char, multispace0, multispace1},
-    combinator::{map, recognize, rest},
+    combinator::map, // Keep terminated
     multi::separated_list1,
-    sequence::{delimited, preceded, terminated, tuple},
+    sequence::{delimited, preceded, terminated},
 };
+use once_cell::sync::Lazy; // Use once_cell for regexes
+use regex::Regex; // Add regex crate
 use std::collections::{HashSet, VecDeque};
 use std::fs::{self, File};
 use std::io::{BufRead, BufReader, BufWriter, Write};
@@ -20,9 +20,17 @@ use std::path::{Path, PathBuf};
 use strsim::levenshtein;
 use thiserror::Error;
 
-// --- Custom Error Types ---
+mod parser;
+
+// --- Regex Definitions (using once_cell::sync::Lazy) ---
+// Finds #if anywhere, captures condition. Need to check match pos later.
+static IF_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"#if\s+(.+)").expect("Invalid IF_RE regex"));
+// Matches block #endif (start of line, allows trailing content like comments)
+static BLOCK_ENDIF_RE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"^\s*#endif.*").expect("Invalid BLOCK_ENDIF_RE regex"));
+
 #[derive(Error, Debug)]
-enum ProcessorError {
+pub(crate) enum ProcessorError {
     #[error("Mismatched #endif found at line {line_num} in {path}")]
     MismatchedEndif { line_num: usize, path: PathBuf },
     #[error("Mismatched #if without corresponding #endif at end of file {path}")]
@@ -42,18 +50,20 @@ enum ProcessorError {
     },
 }
 
-// --- Data Structures for Parsed Conditions ---
 #[derive(Debug, PartialEq, Clone)]
-enum Condition {
+pub(crate) enum Condition {
     Single(String),
     And(Vec<String>),
     Or(Vec<String>),
 }
 
 impl Condition {
-    /// Evaluates the parsed condition against the provided flags.
-    /// Also collects all flags encountered in the condition into `used_flags`.
-    fn evaluate(&self, flags: &HashSet<String>, used_flags: &mut HashSet<String>) -> bool {
+    // Make methods used by tests crate-public
+    pub(crate) fn evaluate(
+        &self,
+        flags: &HashSet<String>,
+        used_flags: &mut HashSet<String>,
+    ) -> bool {
         match self {
             Condition::Single(flag) => {
                 used_flags.insert(flag.clone());
@@ -69,100 +79,8 @@ impl Condition {
             }
         }
     }
-
-    /// Extracts all flag names mentioned in the condition.
-    fn mentioned_flags(&self) -> Vec<String> {
-        match self {
-            Condition::Single(flag) => vec![flag.clone()],
-            Condition::And(terms) | Condition::Or(terms) => terms.clone(),
-        }
-    }
 }
 
-// --- Parser Logic (`nom`) ---
-mod parser {
-    use super::*; // Import necessary items from outer scope
-
-    // Represents the outcome of parsing a single line
-    #[derive(Debug, PartialEq)]
-    pub(super) enum LineParseResult<'a> {
-        If(Condition),
-        Endif,
-        Content(&'a str), // The actual content line
-    }
-
-    // Basic identifier/flag parser (non-whitespace, non-parenthesis)
-    fn identifier(input: &str) -> IResult<&str, &str> {
-        take_while1(|c: char| !c.is_whitespace() && c != '(' && c != ')')(input)
-    }
-
-    // Parser for "(and flag1 flag2 ...)"
-    fn parse_and(input: &str) -> IResult<&str, Condition> {
-        map(
-            delimited(
-                tag("(and"),
-                preceded(multispace1, separated_list1(multispace1, identifier)),
-                preceded(multispace0, char(')')),
-            ),
-            |flags: Vec<&str>| Condition::And(flags.into_iter().map(String::from).collect()),
-        )(input)
-    }
-
-    // Parser for "(or flag1 flag2 ...)"
-    fn parse_or(input: &str) -> IResult<&str, Condition> {
-        map(
-            delimited(
-                tag("(or"),
-                preceded(multispace1, separated_list1(multispace1, identifier)),
-                preceded(multispace0, char(')')),
-            ),
-            |flags: Vec<&str>| Condition::Or(flags.into_iter().map(String::from).collect()),
-        )(input)
-    }
-
-    // Parser for a single flag condition
-    fn parse_single(input: &str) -> IResult<&str, Condition> {
-        map(identifier, |flag| Condition::Single(flag.to_string()))(input)
-    }
-
-    // Parser for any valid condition
-    fn parse_condition(input: &str) -> IResult<&str, Condition> {
-        alt((parse_and, parse_or, parse_single))(input)
-    }
-
-    // Parser for "#if condition" line
-    fn parse_if_directive(input: &str) -> IResult<&str, LineParseResult> {
-        map(
-            preceded(
-                tuple((multispace0, tag("#if"), multispace1)),
-                // Important: consume trailing whitespace/newline after condition
-                terminated(parse_condition, multispace0),
-            ),
-            LineParseResult::If,
-        )(input)
-    }
-
-    // Parser for "#endif" line
-    fn parse_endif_directive(input: &str) -> IResult<&str, LineParseResult> {
-        map(
-            // Ensure the whole line is matched (or just whitespace after #endif)
-            recognize(tuple((multispace0, tag("#endif"), multispace0))),
-            |_| LineParseResult::Endif,
-        )(input)
-    }
-
-    // Top-level line parser
-    // Tries to parse #if, then #endif. If both fail, it's content.
-    pub(super) fn parse_line(input: &str) -> IResult<&str, LineParseResult> {
-        alt((
-            parse_if_directive,
-            parse_endif_directive,
-            map(rest, LineParseResult::Content), // If others fail, take the rest as content
-        ))(input)
-    }
-} // end mod parser
-
-// --- Argument Parsing ---
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
@@ -184,9 +102,8 @@ struct Args {
 }
 
 // --- Core Processing Logic ---
-
-/// Processes lines from a reader based on conditional blocks and flags.
-fn process_content(
+// Make function crate-public
+pub(crate) fn process_content(
     reader: impl BufRead,
     file_path: &Path, // For error context
     flags: &HashSet<String>,
@@ -198,74 +115,85 @@ fn process_content(
 
     for line_result in reader.lines() {
         line_num += 1;
+        // Keep original line ending in the string for now if needed, though we add it back later
         let line = line_result.map_err(|e| ProcessorError::Io {
             path: file_path.to_path_buf(),
             source: e,
         })?;
 
-        match parser::parse_line(&line) {
-            Ok((_, parse_result)) => match parse_result {
-                parser::LineParseResult::If(condition) => {
-                    let current_block_active = *include_stack.back().unwrap_or(&false); // Should always have initial `true`
-                    let is_condition_met = condition.evaluate(flags, used_flags);
-                    include_stack.push_back(current_block_active && is_condition_met);
-                }
-                parser::LineParseResult::Endif => {
-                    if include_stack.len() > 1 {
-                        include_stack.pop_back();
-                    } else {
-                        return Err(ProcessorError::MismatchedEndif {
-                            line_num,
-                            path: file_path.to_path_buf(),
-                        });
-                    }
-                }
-                parser::LineParseResult::Content(content_str) => {
-                    if *include_stack.back().unwrap_or(&false) {
-                        // Only push the relevant content part if nom didn't consume the whole line
-                        // In our current parser setup, `Content` gets the *whole* original line.
-                        output.push(content_str.to_string());
-                    }
-                }
-            },
-            Err(nom::Err::Error(e) | nom::Err::Failure(e)) => {
-                // If parse_line fails, it should only be due to a malformed #if condition,
-                // as Content covers everything else. Let's try to extract the condition part.
-                // A simpler approach: treat any parse failure on non-empty lines as potential error
-                if !line.trim().is_empty() {
-                    // Attempt to find the #if part to report it
-                    let relevant_slice: &str = line
-                        .trim_start()
-                        .strip_prefix("#if") // Returns Option<&str> containing the part *after* "#if"
-                        .unwrap_or(&line); // If no "#if", use the original line slice (&str via Deref<Target=str>)
-
-                    // Trim whitespace from the chosen slice and own it.
-                    let condition_part: String = relevant_slice.trim().to_owned();
-                    // let condition_part: &String = line.trim_start().strip_prefix("#if").map_or(&line, |s| &(s.trim().to_owned()));
-                    return Err(ProcessorError::ConditionParse {
-                        condition: condition_part.to_string(),
-                        line_num,
-                        path: file_path.to_path_buf(),
-                        reason: format!("nom parser error: {:?}", e.code), // Provide nom error code
-                    });
-                }
-                // Otherwise, likely an empty line or just whitespace, treat as content (if active)
-                else if *include_stack.back().unwrap_or(&false) {
-                    output.push(line);
-                }
-            }
-            Err(nom::Err::Incomplete(_)) => {
-                // Should not happen when reading complete lines
-                return Err(ProcessorError::ConditionParse {
-                    condition: line.to_string(),
+        // --- Check for Block #endif ---
+        if BLOCK_ENDIF_RE.is_match(&line) {
+            if include_stack.len() > 1 {
+                include_stack.pop_back();
+            } else {
+                // Mismatched #endif
+                return Err(ProcessorError::MismatchedEndif {
                     line_num,
                     path: file_path.to_path_buf(),
-                    reason: "Incomplete line data for parser".to_string(),
                 });
             }
+            // Consume the #endif line entirely
+            continue;
+        }
+
+        // --- Check for #if (Block or Inline) ---
+        if let Some(captures) = IF_RE.captures(&line) {
+            // Safely get match positions and condition string
+            let full_match = captures.get(0).unwrap(); // The whole "#if ..." match
+            let condition_str = captures.get(1).map_or("", |m| m.as_str()); // The condition part
+
+            // Determine if it's block or inline based on what precedes the match
+            let preceding_text = &line[..full_match.start()];
+            let is_block_if = preceding_text.trim().is_empty();
+
+            match parser::parse_condition_str(condition_str) {
+                Ok(condition) => {
+                    if is_block_if {
+                        // --- Handle Block #if ---
+                        let current_block_active = *include_stack.back().unwrap_or(&false);
+                        let is_condition_met = condition.evaluate(flags, used_flags);
+                        include_stack.push_back(current_block_active && is_condition_met);
+                        // Consume the block #if line entirely
+                        continue;
+                    } else {
+                        // --- Handle Inline #if ---
+                        let content_before = preceding_text.trim_end(); // Content to potentially include
+                        // let current_block_active = *include_stack.back().unwrap_or(&false);
+
+                        // Include content_before only if the block is active AND the inline condition is true
+                        if condition.evaluate(flags, used_flags) {
+                            if !content_before.is_empty() {
+                                // Avoid pushing empty strings
+                                output.push(content_before.to_string());
+                            }
+                        }
+                        // Regardless of the condition, the inline #if consumes the rest of the line.
+                        // The include_stack is NOT affected.
+                        continue; // Move to the next line
+                    }
+                }
+                Err(reason) => {
+                    // Failed to parse the condition string
+                    return Err(ProcessorError::ConditionParse {
+                        condition: condition_str.to_string(),
+                        line_num,
+                        path: file_path.to_path_buf(),
+                        reason,
+                    });
+                }
+            }
+        }
+
+        // --- Handle Regular Content Line (No Directives) ---
+        // If we reach here, the line contains no directives (or was handled inline)
+        // Check the current include state
+        if *include_stack.back().unwrap_or(&false) {
+            // If the block is active, add the entire line
+            output.push(line);
         }
     }
 
+    // Final check for mismatched #if at end of file
     if include_stack.len() != 1 {
         Err(ProcessorError::MismatchedIf {
             path: file_path.to_path_buf(),
@@ -275,28 +203,22 @@ fn process_content(
     }
 }
 
-/// Processes a single template file.
-fn process_file(
+pub(crate) fn process_file(
     src_path: &Path,
     dest_path: &Path,
     flags: &HashSet<String>,
     used_flags: &mut HashSet<String>,
 ) -> Result<&'static str> {
-    // Returns status string
     let file = File::open(src_path)
         .with_context(|| format!("Failed to open source file: {}", src_path.display()))?;
     let reader = BufReader::new(file);
 
-    let processed_lines = process_content(reader, src_path, flags, used_flags)
+    let processed_lines = process_content(reader, src_path, flags, used_flags) // Uses new logic
         .with_context(|| format!("Failed to process content of: {}", src_path.display()))?;
 
     if processed_lines.iter().all(|line| line.trim().is_empty()) {
-        // Optionally remove the destination file if it exists and is now empty
-        // if dest_path.exists() { fs::remove_file(dest_path).ok(); }
         return Ok("skipped");
     }
-
-    // Ensure destination directory exists
     if let Some(parent) = dest_path.parent() {
         fs::create_dir_all(parent).with_context(|| {
             format!(
@@ -305,13 +227,10 @@ fn process_file(
             )
         })?;
     }
-
     let dest_file = File::create(dest_path)
         .with_context(|| format!("Failed to create destination file: {}", dest_path.display()))?;
     let mut writer = BufWriter::new(dest_file);
-
     for line in processed_lines {
-        // Use writeln! to handle line endings consistently
         writeln!(writer, "{}", line).with_context(|| {
             format!(
                 "Failed to write to destination file: {}",
@@ -319,48 +238,18 @@ fn process_file(
             )
         })?;
     }
-
-    // Ensure buffer is flushed
     writer.flush().with_context(|| {
         format!(
             "Failed to flush writer for destination file: {}",
             dest_path.display()
         )
     })?;
-
     Ok("written")
 }
 
-/// Scans all files in the source directory to find all unique condition flags used.
-fn scan_all_conditions(src_dir: &Path) -> Result<HashSet<String>> {
-    let mut seen_flags = HashSet::new();
-    for entry in walkdir::WalkDir::new(src_dir)
-        .into_iter()
-        .filter_map(Result::ok)
-        .filter(|e| e.file_type().is_file())
-    {
-        let path = entry.path();
-        let file = File::open(path)
-            .with_context(|| format!("Failed to open file for scanning: {}", path.display()))?;
-        let reader = BufReader::new(file);
-
-        for line_result in reader.lines() {
-            let line = line_result.context("Failed to read line during scan")?;
-            // Use the parser to find #if directives and extract condition flags
-            if let Ok((_, parser::LineParseResult::If(condition))) = parser::parse_line(&line) {
-                seen_flags.extend(condition.mentioned_flags());
-            }
-            // Ignore lines that don't parse as #if during scan
-        }
-    }
-    Ok(seen_flags)
-}
-
-// --- Helper for Unused Flag Suggestions ---
-fn find_closest_match<'a>(flag: &str, candidates: &[&'a str]) -> Option<&'a str> {
+pub(crate) fn find_closest_match<'a>(flag: &str, candidates: &[&'a str]) -> Option<&'a str> {
     candidates
         .iter()
-        .filter(|&&candidate| candidate != flag) // Don't suggest itself
         .min_by_key(|&&candidate| levenshtein(flag, candidate))
         .filter(|&&best_match| {
             let distance = levenshtein(flag, best_match);
@@ -371,7 +260,6 @@ fn find_closest_match<'a>(flag: &str, candidates: &[&'a str]) -> Option<&'a str>
         .copied()
 }
 
-// --- Main Execution ---
 fn main() -> Result<()> {
     let args = Args::parse();
     let flags: HashSet<String> = args.flags.into_iter().collect();
@@ -383,6 +271,7 @@ fn main() -> Result<()> {
             args.src_dir.display()
         ));
     }
+    // Ensure dest dir exists or create it
     if !args.dest_dir.exists() {
         fs::create_dir_all(&args.dest_dir).with_context(|| {
             format!(
@@ -407,12 +296,24 @@ fn main() -> Result<()> {
         .filter(|e| e.file_type().is_file())
     {
         let src_path = entry.path();
-        let rel_path = src_path.strip_prefix(&args.src_dir)?;
+        let rel_path = match src_path.strip_prefix(&args.src_dir) {
+            Ok(p) => p,
+            Err(_) => {
+                eprintln!(
+                    "{}",
+                    format!(
+                        "Warning: Could not determine relative path for {}",
+                        src_path.display()
+                    )
+                    .yellow()
+                );
+                continue; // Skip this file
+            }
+        };
         let dest_path = args.dest_dir.join(rel_path);
 
         if args.verbose {
             print!("Processing: {} ... ", rel_path.display());
-            // Flush stdout to ensure the message appears before potential delay/output
             std::io::stdout().flush().ok();
         }
 
@@ -430,7 +331,6 @@ fn main() -> Result<()> {
                 }
             }
             Ok(other) => {
-                // Should not happen
                 if args.verbose {
                     println!("Unknown status: {}", other);
                 }
@@ -438,12 +338,8 @@ fn main() -> Result<()> {
             Err(e) => {
                 files_error += 1;
                 if args.verbose {
-                    // Clear the "Processing..." message before printing error
-                    // This works best on terminals supporting cursor movement (most modern ones)
-                    // print!("\r\x1b[K"); // Move cursor to beginning, clear line
-                    println!(""); // Newline after "Processing..."
-                }
-                // Use {:?} for anyhow::Error to include context chain
+                    println!();
+                } // Newline after "Processing..."
                 eprintln!(
                     "{}",
                     format!("Error processing {}: {:?}", rel_path.display(), e).red()
@@ -467,85 +363,42 @@ fn main() -> Result<()> {
 
     // --- Unused Flag Reporting ---
     let unused_flags: Vec<&String> = flags.difference(&used_flags).collect();
-
     if !unused_flags.is_empty() {
         println!("\n{}", "Unused flags:".yellow().bold());
-
-        match scan_all_conditions(&args.src_dir) {
-            Ok(all_conditions_set) => {
-                let all_conditions_vec: Vec<&str> =
-                    all_conditions_set.iter().map(String::as_str).collect();
-
-                for &unused_flag in &unused_flags {
-                    let mut msg = format!(
-                        "  - Flag {} was provided but not used in any evaluated condition.",
-                        unused_flag.red()
-                    );
-
-                    if !all_conditions_set.contains(unused_flag) {
-                        msg.push_str(" It also doesn't appear in any #if condition.");
-
-                        if let Some(suggestion) =
-                            find_closest_match(unused_flag, &all_conditions_vec)
-                        {
-                            msg.push_str(&format!(" Did you mean {}?", suggestion.green()));
-                        }
-                    } else {
-                        msg.push_str(" (It appears in conditions, but they were never 'true').");
-                    }
-
-                    println!("{}", msg);
-                }
-
-                let mut sorted_used: Vec<_> = used_flags.iter().collect();
-                sorted_used.sort_unstable();
-                if !sorted_used.is_empty() {
-                    println!("\n{}", "Flags effectively used by conditions:".dimmed());
-                    print!("  ");
-                    for (i, flag) in sorted_used.iter().enumerate() {
-                        if i > 0 {
-                            print!(" ");
-                        }
-                        print!("{}", flag.cyan());
-                    }
-                    println!();
-                }
-
-                // Only show "All flags" if it adds value (i.e., different from used or suggests typos)
-                let mut sorted_all: Vec<_> = all_conditions_vec.clone();
-                sorted_all.sort_unstable();
-                if !sorted_all.is_empty() && sorted_all.iter().any(|f| !used_flags.contains(*f)) {
-                    println!("\n{}", "All flags found in template conditions:".dimmed());
-                    print!("  ");
-                    for (i, flag) in sorted_all.iter().enumerate() {
-                        if i > 0 {
-                            print!(" ");
-                        }
-                        print!("{}", flag.dimmed());
-                    }
-                    println!();
+        let used_flags_vec: Vec<&str> = used_flags.iter().map(String::as_str).collect();
+        for &unused_flag in &unused_flags {
+            let mut msg = format!(
+                "  - Flag {} was provided but not used in any #if condition.",
+                unused_flag.red(),
+            );
+            if !used_flags.contains(unused_flag) {
+                if let Some(suggestion) = find_closest_match(unused_flag, &used_flags_vec) {
+                    msg.push_str(&format!("\n  Did you mean {}?", suggestion.green()));
                 }
             }
-            Err(e) => {
-                eprintln!(
-                    "{}",
-                    format!(
-                        "\nWarning: Could not scan for all conditions to provide suggestions: {:?}",
-                        e
-                    )
-                    .yellow()
-                );
-                for &unused_flag in &unused_flags {
-                    println!("  - Unused flag: {}", unused_flag.red());
+            println!("{}", msg);
+        }
+        let mut sorted_used: Vec<_> = used_flags.iter().collect();
+        sorted_used.sort_unstable();
+        if !sorted_used.is_empty() {
+            println!("\n{}", "Available Flags:".dimmed());
+            print!("  ");
+            for (i, flag) in sorted_used.iter().enumerate() {
+                if i > 0 {
+                    print!(" ");
                 }
+                print!("{}", flag.cyan());
             }
+            println!();
         }
     }
 
-    // Indicate error to shell if any file processing failed
     if files_error > 0 {
         std::process::exit(1);
     }
-
     Ok(())
 }
+
+// --- Add #[cfg(test)] mod tests; if using separate file ---
+#[cfg(test)]
+mod tests;
