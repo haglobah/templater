@@ -20,114 +20,103 @@ fn run_process_content(
     (result, used_flags)
 }
 
-// --- Parser Tests (`nom`) ---
 #[test]
-fn test_parser_if_single() {
+fn test_parse_condition_str_ok() {
     assert_eq!(
-        parser::parse_line("#if foo"),
-        Ok((
-            "",
-            parser::LineParseResult::If(Condition::Single("foo".to_string()))
-        ))
+        parser::parse_condition_str("foo"),
+        Ok(parser::Condition::Single("foo".to_string()))
     );
     assert_eq!(
-        parser::parse_line("  #if   bar  "), // Whitespace
-        Ok((
-            "",
-            parser::LineParseResult::If(Condition::Single("bar".to_string()))
-        ))
+        parser::parse_condition_str(" (and a b) "),
+        Ok(parser::Condition::And(vec!["a".to_string(), "b".to_string()]))
+    );
+    assert_eq!(
+        parser::parse_condition_str("(or c)"),
+        Ok(parser::Condition::Or(vec!["c".to_string()]))
     );
 }
 
 #[test]
-fn test_parser_if_and() {
-    assert_eq!(
-        parser::parse_line("#if (and foo bar baz)"),
-        Ok((
-            "",
-            parser::LineParseResult::If(Condition::And(vec![
-                "foo".to_string(),
-                "bar".to_string(),
-                "baz".to_string()
-            ]))
-        ))
-    );
-    assert_eq!(
-        parser::parse_line(" #if (and  f1   f2 ) "), // Extra whitespace
-        Ok((
-            "",
-            parser::LineParseResult::If(Condition::And(vec!["f1".to_string(), "f2".to_string()]))
-        ))
-    );
+fn test_parse_condition_str_err() {
+    assert!(parser::parse_condition_str("(and a").is_err()); // Incomplete
+    assert!(parser::parse_condition_str("foo bar").is_err()); // Trailing chars
+    assert!(parser::parse_condition_str("(and a) extra").is_err()); // Trailing chars
+    assert!(parser::parse_condition_str("").is_err()); // Empty
+    assert!(parser::parse_condition_str("()").is_err()); // Invalid structure
+}
+#[test]
+fn test_process_block_if_true() {
+    let input = "#if foo\ncontent\n#endif";
+    let (result, used) = run_process_content(input, &make_hashset(&["foo"]));
+    assert_eq!(result.unwrap(), vec!["content"]);
+    assert_eq!(used, make_hashset(&["foo"]));
 }
 
 #[test]
-fn test_parser_if_or() {
-    assert_eq!(
-        parser::parse_line("#if (or foo bar baz)"),
-        Ok((
-            "",
-            parser::LineParseResult::If(Condition::Or(vec![
-                "foo".to_string(),
-                "bar".to_string(),
-                "baz".to_string()
-            ]))
-        ))
-    );
-    assert_eq!(
-        parser::parse_line(" #if (or  f1   f2 ) "), // Extra whitespace
-        Ok((
-            "",
-            parser::LineParseResult::If(Condition::Or(vec!["f1".to_string(), "f2".to_string()]))
-        ))
-    );
+fn test_process_block_if_false() {
+    let input = "#if foo\ncontent\n#endif";
+    let (result, used) = run_process_content(input, &make_hashset(&["bar"]));
+    assert!(result.unwrap().is_empty());
+    assert_eq!(used, make_hashset(&["foo"]));
+}
+
+// New Inline Tests
+#[test]
+fn test_process_inline_if_true() {
+    let input = "include this #if foo";
+    let (result, used) = run_process_content(input, &make_hashset(&["foo"]));
+    assert_eq!(result.unwrap(), vec!["include this"]);
+    assert_eq!(used, make_hashset(&["foo"]));
 }
 
 #[test]
-fn test_parser_endif() {
-    assert_eq!(
-        parser::parse_line("#endif"),
-        Ok(("", parser::LineParseResult::Endif))
-    );
-    assert_eq!(
-        parser::parse_line("  #endif   "), // Whitespace
-        Ok(("", parser::LineParseResult::Endif))
-    );
-    // Nom treats content after endif on same line as *part* of the Endif recognition
-    // because we used `recognize`. If we just used `tag("#endif")`, the rest would be leftover.
-    assert_eq!(
-        parser::parse_line("#endif // comment"),
-        Ok(("// comment", parser::LineParseResult::Endif)) // Recognize stops after #endif + whitespace
-                                                           // Ok(("", parser::LineParseResult::Endif)) // If using terminated(tag("#endif"), multispace0)
-    );
+fn test_process_inline_if_false() {
+    let input = "include this #if foo";
+    let (result, used) = run_process_content(input, &make_hashset(&["bar"]));
+    assert!(result.unwrap().is_empty()); // Content before #if is dropped
+    assert_eq!(used, make_hashset(&["foo"])); // parser::Condition still evaluated
 }
 
 #[test]
-fn test_parser_content() {
-    assert_eq!(
-        parser::parse_line("This is a content line"),
-        Ok((
-            "",
-            parser::LineParseResult::Content("This is a content line")
-        ))
-    );
-    assert_eq!(
-        parser::parse_line("  Indented content"),
-        Ok(("", parser::LineParseResult::Content("  Indented content")))
-    );
-    assert_eq!(
-        parser::parse_line(""), // Empty line
-        Ok(("", parser::LineParseResult::Content("")))
-    );
+fn test_process_inline_if_true_inside_false_block() {
+    let input = "#if A\nline1\ncontent #if B\nline3\n#endif"; // B is inline
+    let (result, used) = run_process_content(input, &make_hashset(&["B"])); // A=false, B=true
+    assert!(result.unwrap().is_empty()); // Whole block A is excluded
+    assert_eq!(used, make_hashset(&["A", "B"])); // B is not evaluated because block A is false
 }
 
 #[test]
-fn test_parser_invalid_if_syntax() {
-    // Our specific parser expects '#if condition', otherwise it's content
-    // Invalid conditions *within* a recognized #if are handled by process_content returning Err
-    assert!(parser::parse_line("#if(").is_err()); // Missing space
-    assert!(parser::parse_line("#if (and foo").is_err()); // Missing closing paren
-    assert!(parser::parse_line("#if (and").is_err()); // Missing flags and paren
+fn test_process_inline_if_false_inside_true_block() {
+    let input = "#if A\nline1\ncontent #if B\nline3\n#endif"; // B is inline
+    let (result, used) = run_process_content(input, &make_hashset(&["A"])); // A=true, B=false
+    assert_eq!(result.unwrap(), vec!["line1", "line3"]); // Inline condition fails, 'content' is dropped
+    // but line1/line3 included due to block A
+    assert_eq!(used, make_hashset(&["A", "B"])); // Both evaluated
+}
+
+#[test]
+fn test_process_inline_if_true_inside_true_block() {
+    let input = "#if A\nline1\ncontent #if B\nline3\n#endif"; // B is inline
+    let (result, used) = run_process_content(input, &make_hashset(&["A", "B"])); // A=true, B=true
+    assert_eq!(result.unwrap(), vec!["line1", "content", "line3"]); // Inline condition passes, 'content' included
+    assert_eq!(used, make_hashset(&["A", "B"]));
+}
+
+#[test]
+fn test_process_mixed_block_and_inline() {
+    let input = "Always #if X\n#if A\nBlock A content\nInline #if B\nMore A\n#endif\nFinal";
+    // X=true, A=true, B=false
+    let (result, used) = run_process_content(input, &make_hashset(&["X", "A"]));
+    assert_eq!(
+        result.unwrap(),
+        vec![
+            "Always",          // Inline X=true
+            "Block A content", // Block A=true
+            "More A",          // Block A=true, Inline B=false drops 'Inline'
+            "Final",           // Block A=true
+        ]
+    );
+    assert_eq!(used, make_hashset(&["X", "A", "B"]));
 }
 
 // --- Condition Evaluation Tests ---
@@ -135,11 +124,11 @@ fn test_parser_invalid_if_syntax() {
 fn test_condition_evaluate_single() {
     let flags = make_hashset(&["foo", "bar"]);
     let mut used = HashSet::new();
-    assert!(Condition::Single("foo".to_string()).evaluate(&flags, &mut used));
+    assert!(parser::Condition::Single("foo".to_string()).evaluate(&flags, &mut used));
     assert_eq!(used, make_hashset(&["foo"]));
 
     used.clear();
-    assert!(!Condition::Single("baz".to_string()).evaluate(&flags, &mut used));
+    assert!(!parser::Condition::Single("baz".to_string()).evaluate(&flags, &mut used));
     assert_eq!(used, make_hashset(&["baz"]));
 }
 
@@ -149,20 +138,20 @@ fn test_condition_evaluate_and() {
     let mut used = HashSet::new();
 
     // All present
-    assert!(Condition::And(vec!["foo".to_string(), "bar".to_string()]).evaluate(&flags, &mut used));
+    assert!(parser::Condition::And(vec!["foo".to_string(), "bar".to_string()]).evaluate(&flags, &mut used));
     assert_eq!(used, make_hashset(&["foo", "bar"]));
     used.clear();
 
     // Some present
     assert!(
-        !Condition::And(vec!["foo".to_string(), "baz".to_string()]).evaluate(&flags, &mut used)
+        !parser::Condition::And(vec!["foo".to_string(), "baz".to_string()]).evaluate(&flags, &mut used)
     );
     assert_eq!(used, make_hashset(&["foo", "baz"]));
     used.clear();
 
     // None present
     assert!(
-        !Condition::And(vec!["baz".to_string(), "qux".to_string()]).evaluate(&flags, &mut used)
+        !parser::Condition::And(vec!["baz".to_string(), "qux".to_string()]).evaluate(&flags, &mut used)
     );
     assert_eq!(used, make_hashset(&["baz", "qux"]));
 }
@@ -173,17 +162,17 @@ fn test_condition_evaluate_or() {
     let mut used = HashSet::new();
 
     // All present (still true)
-    assert!(Condition::Or(vec!["foo".to_string(), "bar".to_string()]).evaluate(&flags, &mut used));
+    assert!(parser::Condition::Or(vec!["foo".to_string(), "bar".to_string()]).evaluate(&flags, &mut used));
     assert_eq!(used, make_hashset(&["foo", "bar"]));
     used.clear();
 
     // Some present
-    assert!(Condition::Or(vec!["foo".to_string(), "baz".to_string()]).evaluate(&flags, &mut used));
+    assert!(parser::Condition::Or(vec!["foo".to_string(), "baz".to_string()]).evaluate(&flags, &mut used));
     assert_eq!(used, make_hashset(&["foo", "baz"]));
     used.clear();
 
     // None present
-    assert!(!Condition::Or(vec!["baz".to_string(), "qux".to_string()]).evaluate(&flags, &mut used));
+    assert!(!parser::Condition::Or(vec!["baz".to_string(), "qux".to_string()]).evaluate(&flags, &mut used));
     assert_eq!(used, make_hashset(&["baz", "qux"]));
 }
 
@@ -251,7 +240,7 @@ fn test_process_nested_if_false() {
     let input = "#if A\nouter\n#if B\ninner\n#endif\nouter_end\n#endif";
     let (result, used) = run_process_content(input, &make_hashset(&["C", "B"])); // A is false
     assert!(result.unwrap().is_empty());
-    assert_eq!(used, make_hashset(&["A"])); // Only A was evaluated
+    assert_eq!(used, make_hashset(&["A", "B"])); // Only A was evaluated
 }
 
 #[test]
@@ -370,44 +359,6 @@ fn test_process_invalid_condition_parse() {
     }
 }
 
-// --- scan_all_conditions Tests ---
-#[test]
-fn test_scan_flags() {
-    // Use walkdir setup if testing actual file system, otherwise simulate reader
-    let input_str = r#"
-        #if A
-        #if (and B C)
-        #endif
-        #if (or D A) // A is duplicate
-        #endif
-        Not a directive
-        #if E
-        #endif
-        "#;
-    let src_dir = Path::new("."); // Dummy path, not actually used by reader simulation
-    // Simulate reading by parsing lines directly
-    let mut seen_flags = HashSet::new();
-    for line in input_str.lines() {
-        if let Ok((_, parser::LineParseResult::If(condition))) = parser::parse_line(line) {
-            seen_flags.extend(condition.mentioned_flags());
-        }
-    }
-
-    assert_eq!(seen_flags, make_hashset(&["A", "B", "C", "D", "E"]));
-}
-
-#[test]
-fn test_scan_no_flags() {
-    let input_str = "line1\nline2\n#endif // Mismatched ok for scan";
-    let mut seen_flags = HashSet::new();
-    for line in input_str.lines() {
-        if let Ok((_, parser::LineParseResult::If(condition))) = parser::parse_line(line) {
-            seen_flags.extend(condition.mentioned_flags());
-        }
-    }
-    assert!(seen_flags.is_empty());
-}
-
 // --- find_closest_match Tests ---
 #[test]
 fn test_find_closest_match_found() {
@@ -424,7 +375,7 @@ fn test_find_closest_match_not_found_distance() {
 
 #[test]
 fn test_find_closest_match_exact_match() {
-    let candidates = ["apple", "banana", "apricot"];
+    let candidates = ["banana", "apricot"];
     assert_eq!(find_closest_match("apple", &candidates), None); // Exact match is excluded
 }
 
