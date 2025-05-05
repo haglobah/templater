@@ -1,0 +1,9 @@
+#if (or slidev)
+{
+    "line-length": false,
+    "no-inline-html": false,
+    "blanks-around-headings": false,
+    "no-duplicate-heading": false,
+    "heading-style": false
+}
+#endif slidev

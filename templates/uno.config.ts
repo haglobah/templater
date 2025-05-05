@@ -1,4 +1,4 @@
-#if unocss
+#if (or unocss slidev)
 import {
   defineConfig,
   transformerDirectives,
@@ -51,6 +51,7 @@ export default defineConfig({
   },
   presets: [
     presetIcons(),
+    #if unocss
     presetWebFonts({
       provider: 'google',
       fonts: {
@@ -61,7 +62,9 @@ export default defineConfig({
         serif: 'IBM Plex Serif:100,200,300,400,500,600,700,800,900:italic'
       },
     }),
+    #endif
     presetWind(),
+    #if unocss
     presetFluid({
       maxWidth: 1440,
       minWidth: 320,
@@ -83,7 +86,9 @@ export default defineConfig({
       },
       commentHelpers: false,
     }),
+    #endif
   ],
   // ...
 })
-#endif unocss
+#endif
+
