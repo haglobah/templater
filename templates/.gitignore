@@ -5,6 +5,8 @@ tmp/
 
 result*
 
+node_modules/ #if node
+
 #if clj
 .clj-kondo/
 .cpcache/
