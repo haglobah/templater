@@ -5,7 +5,7 @@ tmp/
 
 result*
 
-node_modules/ #if node
+node_modules/ #if (or node slidev)
 
 #if clj
 .clj-kondo/

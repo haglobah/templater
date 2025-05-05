@@ -42,7 +42,7 @@
           ];
           packages = with pkgs; [
             racket           #if (or racket pollen)
-            nodejs_22        #if (or node cljs astro)
+            nodejs_22        #if (or node cljs astro slidev)
             zulu             #if (or clj java cljs)
             clojure          #if clj
             clojure-lsp      #if clj
