@@ -14,5 +14,5 @@ cd my_webapp
 direnv allow
 ```
 
-A word of caution: **This relentlessly overwrites anything that's in the target folder.**
+A word of caution: **This relentlessly overwrites anything that's in the target folder.**  
 Make sure you don't execute it on anything that's not version controlled already.
