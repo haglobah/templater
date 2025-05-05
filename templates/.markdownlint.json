@@ -4,6 +4,7 @@
     "no-inline-html": false,
     "blanks-around-headings": false,
     "no-duplicate-heading": false,
-    "heading-style": false
+    "heading-style": false,
+    "single-h1": false
 }
 #endif slidev
