@@ -60,6 +60,7 @@
             gleam
             erlang
             rebar3
+            inotify-tools    #if lustre
             #endif gleam
             elixir_1_18      #if (or elixir)
           ];
