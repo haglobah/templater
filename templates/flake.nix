@@ -41,6 +41,11 @@
             # { name = "MY_ENV_VAR"; value = "SOTRUE"; }
           ];
           packages = with pkgs; [
+            nixfmt-rfc-style
+            #if just
+            just
+            concurrently
+            #endif just
             racket           #if (or racket pollen)
             nodejs_22        #if (or node cljs astro slidev)
             zulu             #if (or clj java cljs)

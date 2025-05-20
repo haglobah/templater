@@ -1,0 +1,26 @@
+#if just
+export concurrently_colors := "blue,green,yellow,magenta,cyan,white"
+
+help:
+    just --list
+
+#if (and gleam lustre)
+dev:
+    gleam run -m lustre/dev start
+#endif gleam
+
+#if gleam
+run:
+    gleam run
+
+test:
+    gleam test
+#endif gleam
+
+all:
+    concurrently \
+    --names "test,lint" \
+    --prefix-colors ${concurrently_colors} \
+        "just test" \
+        "just lint"
+#endif just
