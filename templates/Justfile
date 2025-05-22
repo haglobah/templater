@@ -4,6 +4,11 @@ export concurrently_colors := "blue,green,yellow,magenta,cyan,white"
 help:
     just --list
 
+#if (or node astro)
+dev:
+    npm run dev
+#endif
+
 #if (and gleam lustre)
 dev:
     gleam run -m lustre/dev start
