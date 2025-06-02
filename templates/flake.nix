@@ -5,6 +5,7 @@
     nixpkgs.url = "https://flakehub.com/f/DeterminateSystems/nixpkgs-weekly/*.tar.gz";
     devshell.url = "github:numtide/devshell"; #if devshell
     devshell.inputs.nixpkgs.follows = "nixpkgs"; #if devshell
+    pre-commit.url = "github:cachix/git-hooks.nix"; #if hooks
   };
 
   outputs = inputs @ {
@@ -15,6 +16,7 @@
     flake-parts.lib.mkFlake {inherit inputs;} {
       imports = [
         inputs.devshell.flakeModule #if devshell
+        inputs.pre-commit.flakeModule #if hooks
       ];
       systems = ["x86_64-linux" "aarch64-linux" "aarch64-darwin" "x86_64-darwin"];
       perSystem = {
@@ -29,6 +31,14 @@
           inherit system;
           config.allowUnfree = true;
         };
+
+        #if hooks
+        pre-commit = {
+          settings.hooks = {
+            cljfmt.enable = true; #if (or clj cljs)
+          };
+        };
+        #endif hooks
         # Per-system attributes can be defined here. The self' and inputs'
         # module parameters provide easy access to attributes of the same
         # system.
