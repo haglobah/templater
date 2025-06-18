@@ -15,6 +15,7 @@ node_modules/ #if (or node slidev)
 .nrepl-port
 .lsp/
 #endif
+.shadow-cljs/ #if cljs
 #if (or gleam erlang)
 *.beam
 *.ez
