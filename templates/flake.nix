@@ -75,11 +75,6 @@
             elixir_1_18      #if (or elixir)
           ];
           commands = [
-            {
-              name = "run";
-              command = "echo \"Run me!\"";
-              help = "Launch the application";
-            }
             #if haskell
             { name = "cr"; command = "cabal run "; help = "Alias for 'cabal run'"; }
             { name = "cu"; command = "cabal update"; help = "'cabal update'"; }
