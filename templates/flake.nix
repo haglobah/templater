@@ -57,7 +57,7 @@
             concurrently
             #endif just
             racket           #if (or racket pollen)
-            nodejs_22        #if (or node cljs astro slidev)
+            nodejs_24        #if (or node cljs astro slidev)
             zulu             #if (or clj java cljs)
             clojure          #if (or clj cljs)
             clojure-lsp      #if (or clj cljs)
