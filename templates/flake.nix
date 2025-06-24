@@ -47,6 +47,19 @@
         packages.default = pkgs.hello;
         #if devshell
         devshells.default = {
+          #if just
+          devshell.motd = ''
+
+            {bold}Welcome to this project's devshell!{reset}
+
+            This project uses {bold}just{reset} as its {italic}command runner{reset}.
+            See all available recipes by running:
+
+            ''$ {bold}just --list{reset}
+
+            $(just --list)
+          '';
+          #endif just
           env = [
             # { name = "MY_ENV_VAR"; value = "SOTRUE"; }
           ];

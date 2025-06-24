@@ -5,17 +5,17 @@ help:
     just --list
 
 setup:
-    npm clean-install #if (or node squint)
+    npm clean-install #if (and just (or node squint))
 
 dev:
-    npm run dev #if (or node astro)
-    gleam run -m lustre/dev start #if (and gleam lustre)
+    npm run dev #if (and just (or node astro))
+    gleam run -m lustre/dev start #if (or just (and gleam lustre))
 
 run:
-    gleam run #if gleam
+    gleam run #if (and just gleam)
 
 test:
-    gleam test #if gleam
+    gleam test #if (and just gleam)
 
 all:
     concurrently \
