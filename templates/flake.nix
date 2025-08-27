@@ -79,6 +79,11 @@
             haskell.packages."ghc98".haskell-language-server
             cabal-install
             #endif haskell
+            #if python
+            (python31.withPackages (pp: [
+              pp.requests # for example
+            ]))
+            #endif python
             #if gleam
             gleam
             erlang
