@@ -80,7 +80,7 @@
             cabal-install
             #endif haskell
             #if python
-            (python31.withPackages (pp: [
+            (python3.withPackages (pp: [
               pp.requests # for example
             ]))
             #endif python
