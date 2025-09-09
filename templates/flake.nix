@@ -83,6 +83,32 @@
             cabal-install
             #endif haskell
 
+            #if rust
+            cargo
+            #endif rust
+
+            #if tauri
+            ##nativeBuildInputs
+            pkg-config
+            gobject-introspection
+            cargo
+            bun
+
+            ##buildInputs
+            at-spi2-atk
+            atkmm
+            cairo
+            gdk-pixbuf
+            glib
+            gtk3
+            harfbuzz
+            librsvg
+            libsoup_3
+            pango
+            webkitgtk_4_1
+            openssl
+            #endif tauri
+
             #if python
             (python3.withPackages (pp: [
               pp.requests # for example
