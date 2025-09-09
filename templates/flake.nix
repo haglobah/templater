@@ -65,31 +65,37 @@
           ];
           packages = with pkgs; [
             nixfmt-rfc-style
+
             #if just
             just
             concurrently
             #endif just
+
             racket           #if (or racket pollen)
             nodejs_24        #if (or node cljs astro slidev)
             zulu             #if (or clj java cljs)
             clojure          #if (or clj cljs)
             clojure-lsp      #if (or clj cljs)
+
             #if haskell
             haskell.compiler."ghc98"
             haskell.packages."ghc98".haskell-language-server
             cabal-install
             #endif haskell
+
             #if python
             (python3.withPackages (pp: [
               pp.requests # for example
             ]))
             #endif python
+
             #if gleam
             gleam
             erlang
             rebar3
             inotify-tools    #if lustre
             #endif gleam
+
             elixir_1_18      #if (or elixir)
           ];
           commands = [
