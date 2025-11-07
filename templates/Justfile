@@ -9,7 +9,11 @@ setup:
 
 dev:
     npm run dev #if (or node astro)
+    typst watch main.typ #if typst
     gleam run -m lustre/dev start #if (and gleam lustre)
+
+build:
+    typst compile main.typ #if typst
 
 run:
     gleam run #if (and just gleam)
