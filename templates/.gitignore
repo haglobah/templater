@@ -3,6 +3,7 @@
 .projectile
 *.log
 tmp/
+.aider*
 
 result*
 
@@ -47,3 +48,5 @@ cabal.project.local~
 .HTF/
 .ghc.environment.*
 #endif
+*.pdf #if typst
+*.zip #if typst

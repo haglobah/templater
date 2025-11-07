@@ -70,7 +70,7 @@
             just
             concurrently
             #endif just
-
+            typst            #if typst
             racket           #if (or racket pollen)
             nodejs_24        #if (or node cljs astro slidev)
             zulu             #if (or clj java cljs)
