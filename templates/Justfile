@@ -7,13 +7,13 @@ help:
 setup:
     npm clean-install #if (or node squint)
 
-dev:
+dev args="":
     npm run dev #if (or node astro)
-    typst watch main.typ #if typst
+    typst watch {{ args }} #if typst
     gleam run -m lustre/dev start #if (and gleam lustre)
 
-build:
-    typst compile main.typ #if typst
+build args="":
+    typst compile {{ args }} #if typst
 
 run:
     gleam run #if (and just gleam)
