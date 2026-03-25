@@ -1,1 +1,1 @@
-{ "singleQuote": true, "semi": false, "printWidth": 100, "objectWrap": "collapse" }
+{ "singleQuote": true, "semi": false, "printWidth": 100, "objectWrap": "collapse" } #if (or typescript node)
