@@ -2,7 +2,7 @@
   description = "A project by ?.";
 
   inputs = {
-    nixpkgs.url = "https://flakehub.com/f/DeterminateSystems/nixpkgs-weekly/*.tar.gz";
+    nixpkgs.url = "github:nixos/nixpkgs?ref=nixos-unstable";
   };
 
   outputs = inputs @ {
@@ -11,10 +11,7 @@
     ...
   }:
     flake-parts.lib.mkFlake {inherit inputs;} {
-      imports = [
-        inputs.devshell.flakeModule #if devshell
-        inputs.pre-commit.flakeModule #if hooks
-      ];
+      imports = [];
       systems = ["x86_64-linux" "aarch64-linux" "aarch64-darwin" "x86_64-darwin"];
       perSystem = {
         config,
