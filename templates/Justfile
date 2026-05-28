@@ -6,9 +6,11 @@ help:
 
 setup:
     npm clean-install #if (or node squint)
+    bun install #if bun
 
 dev args="":
     npm run dev #if (or node astro)
+    bun run dev #if bun
     typst watch {{ args }} #if typst
     gleam run -m lustre/dev start #if (and gleam lustre)
 

@@ -1,4 +1,4 @@
-#if (or slidev)
+#if slidev
 {
     "line-length": false,
     "no-inline-html": false,

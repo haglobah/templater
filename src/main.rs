@@ -47,6 +47,45 @@ pub(crate) fn parse_condition(s: &str) -> Result<Condition> {
     }
 }
 
+/// Split a directive argument string into the condition and an optional label.
+///
+/// `foo`            → (`foo`, None)
+/// `foo bar`        → (`foo`, Some(`bar`))
+/// `(or a b)`       → (`(or a b)`, None)
+/// `(or a b) lab`   → (`(or a b)`, Some(`lab`))
+/// `foo bar baz`    → error (label must be a single token)
+pub(crate) fn split_cond_and_label(s: &str) -> Result<(&str, Option<&str>)> {
+    let s = s.trim();
+    let (cond, rest) = if s.starts_with('(') {
+        match s.find(')') {
+            Some(close) => (&s[..=close], &s[close + 1..]),
+            None => (s, ""),
+        }
+    } else {
+        match s.split_once(char::is_whitespace) {
+            Some((c, r)) => (c, r),
+            None => (s, ""),
+        }
+    };
+    let label = rest.trim();
+    if label.is_empty() {
+        Ok((cond, None))
+    } else if label.contains(char::is_whitespace) {
+        bail!("label must be a single token: '{label}'")
+    } else {
+        Ok((cond, Some(label)))
+    }
+}
+
+/// The label an `#endif` must use to match this opening directive: the explicit
+/// label if given, otherwise the condition string itself when it's a bare flag.
+fn open_label(condition: &Condition, explicit: Option<&str>) -> Option<String> {
+    explicit.map(str::to_string).or_else(|| match condition {
+        Condition::Single(name) => Some(name.clone()),
+        _ => None,
+    })
+}
+
 // --- CLI args ---
 
 #[derive(Parser, Debug)]
@@ -76,39 +115,83 @@ pub(crate) fn process_content(
     file_path: &Path,
     flags: &HashSet<String>,
 ) -> Result<(Vec<String>, HashSet<String>)> {
+    // Stack frames: (active, label) — label is what an #endif must match.
+    let initial_stack: Vec<(bool, Option<String>)> = vec![(true, None)];
     let (output, used_flags, stack) = reader
         .lines()
         .enumerate()
         .try_fold(
-            (Vec::new(), HashSet::<String>::new(), vec![true]),
+            (Vec::new(), HashSet::<String>::new(), initial_stack),
             |(mut output, mut used_flags, mut stack), (idx, line_result)| {
                 let line_num = idx + 1;
                 let line = line_result.with_context(|| {
                     format!("I/O error at line {line_num} in {}", file_path.display())
                 })?;
 
-                // Block #endif
-                if line.trim_start().starts_with("#endif") {
-                    if stack.len() > 1 {
-                        stack.pop();
-                    } else {
+                // Block #endif (must be on its own line, optional trailing label)
+                let trimmed_start = line.trim_start();
+                let endif_rest = if trimmed_start == "#endif" {
+                    Some("")
+                } else {
+                    trimmed_start
+                        .strip_prefix("#endif")
+                        .filter(|rest| rest.starts_with(char::is_whitespace))
+                };
+                if let Some(rest) = endif_rest {
+                    let close_label = {
+                        let l = rest.trim();
+                        if l.is_empty() {
+                            None
+                        } else if l.contains(char::is_whitespace) {
+                            bail!(
+                                "label must be a single token at line {line_num} in {}: '{l}'",
+                                file_path.display()
+                            );
+                        } else {
+                            Some(l)
+                        }
+                    };
+                    if stack.len() <= 1 {
                         bail!(
                             "mismatched #endif at line {line_num} in {}",
                             file_path.display()
                         );
                     }
+                    let (_, open_lab) = stack.last().expect("stack invariant: non-empty");
+                    if let Some(close) = close_label {
+                        match open_lab {
+                            Some(open) if open == close => {}
+                            Some(open) => bail!(
+                                "#endif label '{close}' does not match opening label '{open}' at line {line_num} in {}",
+                                file_path.display()
+                            ),
+                            None => bail!(
+                                "#endif label '{close}' but opening directive has no label at line {line_num} in {}",
+                                file_path.display()
+                            ),
+                        }
+                    }
+                    stack.pop();
                     return Ok((output, used_flags, stack));
                 }
 
                 // #if (block or inline)
                 if let Some(pos) = line.find("#if ") {
-                    let condition_str = &line[pos + 4..];
+                    let args_str = &line[pos + 4..];
                     let prefix = &line[..pos];
                     let is_block = prefix.trim().is_empty();
 
-                    let condition = parse_condition(condition_str).with_context(|| {
+                    let (cond_str, explicit_label) =
+                        split_cond_and_label(args_str).with_context(|| {
+                            format!(
+                                "failed to parse #if at line {line_num} in {}",
+                                file_path.display()
+                            )
+                        })?;
+
+                    let condition = parse_condition(cond_str).with_context(|| {
                         format!(
-                            "failed to parse condition '{condition_str}' at line {line_num} in {}",
+                            "failed to parse condition '{cond_str}' at line {line_num} in {}",
                             file_path.display()
                         )
                     })?;
@@ -116,10 +199,13 @@ pub(crate) fn process_content(
                     let (met, cond_used) = condition.evaluate(flags);
                     used_flags.extend(cond_used);
 
+                    let (parent_active, _) =
+                        stack.last().expect("stack invariant: non-empty");
+                    let parent_active = *parent_active;
                     if is_block {
-                        let parent_active = *stack.last().unwrap_or(&false);
-                        stack.push(parent_active && met);
-                    } else if met {
+                        let label = open_label(&condition, explicit_label);
+                        stack.push((parent_active && met, label));
+                    } else if parent_active && met {
                         let trimmed = prefix.trim_end();
                         if !trimmed.is_empty() {
                             output.push(trimmed.to_string());
@@ -129,7 +215,8 @@ pub(crate) fn process_content(
                 }
 
                 // Regular content line
-                if *stack.last().unwrap_or(&false) {
+                let (active, _) = stack.last().expect("stack invariant: non-empty");
+                if *active {
                     output.push(line);
                 }
 

@@ -163,6 +163,83 @@ fn test_process_inline_if_true_inside_true_block() {
 }
 
 #[test]
+fn test_process_inline_if_true_inside_false_block() {
+    let input = "#if A\nline1\ncontent #if B\n#endif";
+    let (lines, _used) = run_process_content(input, &make_hashset(&["B"])).unwrap();
+    assert!(lines.is_empty(), "leaked content from false block: {lines:?}");
+}
+
+#[test]
+fn test_process_endif_word_boundary() {
+    let input = "#if A\n#endifoo\n#endif";
+    let (lines, _used) = run_process_content(input, &make_hashset(&["A"])).unwrap();
+    assert_eq!(lines, vec!["#endifoo"]);
+}
+
+#[test]
+fn test_process_endif_with_label_matches() {
+    let input = "#if A\ncontent\n#endif A";
+    let (lines, _used) = run_process_content(input, &make_hashset(&["A"])).unwrap();
+    assert_eq!(lines, vec!["content"]);
+}
+
+#[test]
+fn test_process_endif_label_mismatch_errors() {
+    let input = "#if A\ncontent\n#endif B";
+    let err = run_process_content(input, &make_hashset(&["A"])).unwrap_err();
+    let msg = format!("{err:#}");
+    assert!(
+        msg.contains("label") && msg.contains("line 3"),
+        "unexpected error: {msg}"
+    );
+}
+
+#[test]
+fn test_process_endif_bare_closes_labeled_open() {
+    let input = "#if A\ncontent\n#endif";
+    let (lines, _used) = run_process_content(input, &make_hashset(&["A"])).unwrap();
+    assert_eq!(lines, vec!["content"]);
+}
+
+#[test]
+fn test_process_endif_label_on_complex_cond_errors() {
+    let input = "#if (or a b)\ncontent\n#endif a";
+    let err = run_process_content(input, &make_hashset(&["a"])).unwrap_err();
+    let msg = format!("{err:#}");
+    assert!(msg.contains("label"), "unexpected error: {msg}");
+}
+
+#[test]
+fn test_process_explicit_label_on_complex_cond() {
+    let input = "#if (or a b) mylabel\ncontent\n#endif mylabel";
+    let (lines, _used) = run_process_content(input, &make_hashset(&["a"])).unwrap();
+    assert_eq!(lines, vec!["content"]);
+}
+
+#[test]
+fn test_process_explicit_label_overrides_implicit() {
+    let input = "#if foo bar\ncontent\n#endif bar";
+    let (lines, _used) = run_process_content(input, &make_hashset(&["foo"])).unwrap();
+    assert_eq!(lines, vec!["content"]);
+}
+
+#[test]
+fn test_process_explicit_label_overrides_so_flagname_does_not_match() {
+    let input = "#if foo bar\ncontent\n#endif foo";
+    let err = run_process_content(input, &make_hashset(&["foo"])).unwrap_err();
+    let msg = format!("{err:#}");
+    assert!(msg.contains("label"), "unexpected error: {msg}");
+}
+
+#[test]
+fn test_process_label_with_extra_tokens_errors() {
+    let input = "#if foo bar baz\ncontent\n#endif";
+    let err = run_process_content(input, &make_hashset(&["foo"])).unwrap_err();
+    let msg = format!("{err:#}");
+    assert!(msg.contains("label"), "unexpected error: {msg}");
+}
+
+#[test]
 fn test_process_mixed_block_and_inline() {
     let input = "Always #if X\n#if A\nBlock A content\nInline #if B\nMore A\n#endif\nFinal";
     let (lines, used) = run_process_content(input, &make_hashset(&["X", "A"])).unwrap();

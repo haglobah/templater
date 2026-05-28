@@ -39,6 +39,7 @@
             typst            #if typst
             racket           #if (or racket pollen)
             nodejs_24        #if (or node typescript cljs astro slidev)
+            bun              #if bun
             zulu             #if (or clj java cljs)
             clojure          #if (or clj cljs)
             clojure-lsp      #if (or clj cljs)
